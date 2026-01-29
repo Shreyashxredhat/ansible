@@ -44,3 +44,15 @@ class TestUri:
                 uri.main()
             fetch_url.assert_called_once()
             assert fetch_url.call_args[1].get("force")
+
+    def test_main_server_hostname(self):
+        """The "server_hostname" parameter to fetch_url() must be passed when provided."""
+        resp = MagicMock()
+        resp.headers.get_content_type.return_value = "text/html"
+        info = {"url": "https://192.0.2.10/", "status": 200}
+        with patch.object(uri, "fetch_url", return_value=(resp, info)) as fetch_url, \
+             patch_module_args({"url": "https://192.0.2.10/", "server_hostname": "example.com"}):
+            with pytest.raises(SystemExit):
+                uri.main()
+            fetch_url.assert_called_once()
+            assert fetch_url.call_args[1].get("server_hostname") == "example.com"

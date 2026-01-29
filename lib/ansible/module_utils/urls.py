@@ -472,8 +472,28 @@ class HTTPRedirectHandler(urllib.request.HTTPRedirectHandler):
         )
 
 
+class ServerHostnameSSLContextProxy:
+    def __init__(self, context, server_hostname):
+        object.__setattr__(self, "_context", context)
+        object.__setattr__(self, "server_hostname", server_hostname)
+
+    def wrap_socket(self, sock, server_hostname=None, *args, **kwargs):
+        if self.server_hostname:
+            server_hostname = self.server_hostname
+        return self._context.wrap_socket(sock, server_hostname=server_hostname, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._context, name)
+
+    def __setattr__(self, name, value):
+        if name in ("_context", "server_hostname"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._context, name, value)
+
+
 def make_context(cafile=None, cadata=None, capath=None, ciphers=None, validate_certs=True, client_cert=None,
-                 client_key=None):
+                 client_key=None, server_hostname=None):
     if ciphers is None:
         ciphers = []
 
@@ -481,6 +501,8 @@ def make_context(cafile=None, cadata=None, capath=None, ciphers=None, validate_c
         raise TypeError('Ciphers must be a list. Got %s.' % ciphers.__class__.__name__)
 
     context = ssl.create_default_context(cafile=cafile)
+    if server_hostname:
+        context = ServerHostnameSSLContextProxy(context, server_hostname)
 
     if not validate_certs:
         context.options |= ssl.OP_NO_SSLv3
@@ -710,7 +732,7 @@ class Request:
                  url_username=None, url_password=None, http_agent=None, force_basic_auth=False,
                  follow_redirects='urllib2', client_cert=None, client_key=None, cookies=None, unix_socket=None,
                  ca_path=None, unredirected_headers=None, decompress=True, ciphers=None, use_netrc=True,
-                 context=None):
+                 context=None, server_hostname=None):
         """This class works somewhat similarly to the ``Session`` class of from requests
         by defining a cookiejar that can be used across requests as well as cascaded defaults that
         can apply to repeated requests
@@ -750,6 +772,7 @@ class Request:
         self.ciphers = ciphers
         self.use_netrc = use_netrc
         self.context = context
+        self.server_hostname = server_hostname
         if isinstance(cookies, cookiejar.CookieJar):
             self.cookies = cookies
         else:
@@ -766,7 +789,7 @@ class Request:
              force_basic_auth=None, follow_redirects=None,
              client_cert=None, client_key=None, cookies=None, use_gssapi=False,
              unix_socket=None, ca_path=None, unredirected_headers=None, decompress=None,
-             ciphers=None, use_netrc=None, context=None):
+             ciphers=None, use_netrc=None, context=None, server_hostname=None):
         """
         Sends a request via HTTP(S) or FTP using urllib (Python3)
 
@@ -810,6 +833,7 @@ class Request:
         :kwarg use_netrc: (optional) Boolean determining whether to use credentials from ~/.netrc file
         :kwarg context: (optional) ssl.Context object for SSL validation. When provided, all other SSL related
             arguments are ignored. See make_context.
+        :kwarg server_hostname: (optional) String to use for TLS SNI and certificate hostname verification.
         :returns: HTTPResponse. Added in Ansible 2.9
         """
 
@@ -838,6 +862,7 @@ class Request:
         ciphers = self._fallback(ciphers, self.ciphers)
         use_netrc = self._fallback(use_netrc, self.use_netrc)
         context = self._fallback(context, self.context)
+        server_hostname = self._fallback(server_hostname, self.server_hostname)
 
         handlers = []
 
@@ -859,6 +884,7 @@ class Request:
                 validate_certs=validate_certs,
                 client_cert=client_cert,
                 client_key=client_key,
+                server_hostname=server_hostname,
             )
         if unix_socket:
             ssl_handler = UnixHTTPSHandler(unix_socket=unix_socket, context=context)
@@ -989,7 +1015,8 @@ def open_url(url, data=None, headers=None, method=None, use_proxy=True,
              force_basic_auth=False, follow_redirects='urllib2',
              client_cert=None, client_key=None, cookies=None,
              use_gssapi=False, unix_socket=None, ca_path=None,
-             unredirected_headers=None, decompress=True, ciphers=None, use_netrc=True):
+             unredirected_headers=None, decompress=True, ciphers=None, use_netrc=True,
+             server_hostname=None):
     """
     Sends a request via HTTP(S) or FTP using urllib (Python3)
 
@@ -1002,7 +1029,8 @@ def open_url(url, data=None, headers=None, method=None, use_proxy=True,
                           force_basic_auth=force_basic_auth, follow_redirects=follow_redirects,
                           client_cert=client_cert, client_key=client_key, cookies=cookies,
                           use_gssapi=use_gssapi, unix_socket=unix_socket, ca_path=ca_path,
-                          unredirected_headers=unredirected_headers, decompress=decompress, ciphers=ciphers, use_netrc=use_netrc)
+                          unredirected_headers=unredirected_headers, decompress=decompress, ciphers=ciphers,
+                          use_netrc=use_netrc, server_hostname=server_hostname)
 
 
 def prepare_multipart(fields):
@@ -1144,6 +1172,7 @@ def url_argument_spec():
         http_agent=dict(type='str', default='ansible-httpget'),
         use_proxy=dict(type='bool', default=True),
         validate_certs=dict(type='bool', default=True),
+        server_hostname=dict(type='str'),
         url_username=dict(type='str'),
         url_password=dict(type='str', no_log=True),
         force_basic_auth=dict(type='bool', default=False),
@@ -1166,7 +1195,7 @@ def url_redirect_argument_spec():
 def fetch_url(module, url, data=None, headers=None, method=None,
               use_proxy=None, force=False, last_mod_time=None, timeout=10,
               use_gssapi=False, unix_socket=None, ca_path=None, cookies=None, unredirected_headers=None,
-              decompress=True, ciphers=None, use_netrc=True):
+              decompress=True, ciphers=None, use_netrc=True, server_hostname=None):
     """Sends a request via HTTP(S) or FTP (needs the module as parameter)
 
     :arg module: The AnsibleModule (used to get username, password etc. (s.b.).
@@ -1188,6 +1217,7 @@ def fetch_url(module, url, data=None, headers=None, method=None,
     :kwarg decompress: (optional) Whether to attempt to decompress gzip content-encoded responses
     :kwarg cipher: (optional) List of ciphers to use
     :kwarg boolean use_netrc: (optional) If False: Ignores login and password in ~/.netrc file (Default: True)
+    :kwarg server_hostname: (optional) String to use for TLS SNI and certificate hostname verification
 
     :returns: A tuple of (**response**, **info**). Use ``response.read()`` to read the data.
         The **info** contains the 'status' and other meta data. When a HttpError (status >= 400)
@@ -1230,6 +1260,7 @@ def fetch_url(module, url, data=None, headers=None, method=None,
     client_cert = module.params.get('client_cert')
     client_key = module.params.get('client_key')
     use_gssapi = module.params.get('use_gssapi', use_gssapi)
+    server_hostname = module.params.get('server_hostname', server_hostname)
 
     if not isinstance(cookies, cookiejar.CookieJar):
         cookies = cookiejar.CookieJar()
@@ -1244,7 +1275,8 @@ def fetch_url(module, url, data=None, headers=None, method=None,
                      follow_redirects=follow_redirects, client_cert=client_cert,
                      client_key=client_key, cookies=cookies, use_gssapi=use_gssapi,
                      unix_socket=unix_socket, ca_path=ca_path, unredirected_headers=unredirected_headers,
-                     decompress=decompress, ciphers=ciphers, use_netrc=use_netrc)
+                     decompress=decompress, ciphers=ciphers, use_netrc=use_netrc,
+                     server_hostname=server_hostname)
         # Lowercase keys, to conform to py2 behavior
         info.update({k.lower(): v for k, v in r.info().items()})
 
