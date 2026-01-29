@@ -456,4 +456,4 @@ def test_open_url(urlopen_mock, install_opener_mock, mocker):
                                      force_basic_auth=False, follow_redirects='urllib2',
                                      client_cert=None, client_key=None, cookies=None, use_gssapi=False,
                                      unix_socket=None, ca_path=None, unredirected_headers=None, decompress=True,
-                                     ciphers=None, use_netrc=True)
+                                     ciphers=None, use_netrc=True, server_hostname=None)
