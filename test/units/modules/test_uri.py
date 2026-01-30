@@ -44,4 +44,3 @@ class TestUri:
                 uri.main()
             fetch_url.assert_called_once()
             assert fetch_url.call_args[1].get("force")
-
