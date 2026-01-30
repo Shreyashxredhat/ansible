@@ -474,8 +474,8 @@ class HTTPRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 class ServerHostnameSSLContextProxy:
     def __init__(self, context, server_hostname):
-        object.__setattr__(self, "_context", context)
-        object.__setattr__(self, "server_hostname", server_hostname)
+        self._context = context
+        self.server_hostname = server_hostname
 
     def wrap_socket(self, sock, server_hostname=None, *args, **kwargs):
         if self.server_hostname:
