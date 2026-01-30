@@ -402,7 +402,7 @@
   assert:
     that:
       - result_sni_ip_no_hostname is failed
-      - "'Hostname mismatch' in result_sni_ip_no_hostname.msg or (result_sni_ip_no_hostname.msg is match('hostname .* doesn.t match .*'))"
+      - "'Hostname mismatch' in result_sni_ip_no_hostname.msg or 'IP address mismatch' in result_sni_ip_no_hostname.msg or (result_sni_ip_no_hostname.msg is match('hostname .* doesn.t match .*'))"
   when: ansible_python.has_sslcontext
 
 - name: validate the status_codes are correct
